@@ -29,6 +29,12 @@ The drivers for this device are not installed. (Code 28)
 There are no compatible drivers for this device.
 ```
 
+### Evidence — Code 28
+
+![Intel High Definition DSP showing Code 28 in Device Manager](docs/images/01-intel-high-definition-dsp-code-28.png)
+
+*Intel High Definition DSP detected by Windows without an installed compatible driver.*
+
 Installing the official Lenovo audio package and asking Windows to automatically search for a driver did not solve the issue.
 
 ---
@@ -59,7 +65,7 @@ The following approaches were tested before manually installing another driver:
 
 - Windows automatic driver search
 - Device Manager driver update
-- Official Lenovo Realtek audio package
+- [Official Lenovo Support](https://pcsupport.lenovo.com/) audio driver package for the IdeaPad Gaming 3 15IMH05
 - Hardware rescan
 - Existing Intel SST/OED packages in the Windows Driver Store
 
@@ -85,6 +91,12 @@ Get-PnpDevice | Where-Object {
 ```
 
 In this case, the result showed that the Intel Smart Sound controller was working while the Intel High Definition DSP was not.
+
+### Evidence — DSP diagnosis
+
+![PowerShell showing Intel Smart Sound controller and DSP status](docs/images/02-intel-sst-dsp-diagnosis.png)
+
+*The Intel Smart Sound controller was operational while the DSP child device remained in an error state.*
 
 The device properties also confirmed:
 
@@ -117,7 +129,9 @@ This indicated that the hardware was being detected correctly, but Windows could
 
 ## Finding a compatible Intel SST OED driver
 
-The device's Hardware ID and Compatible ID were used to search the **Microsoft Update Catalog**.
+The device's Hardware ID and Compatible ID were used to search the [Microsoft Update Catalog](https://www.catalog.update.microsoft.com/).
+
+The driver used in this case was obtained directly from Microsoft's catalog rather than from a third-party driver repository.
 
 A package containing:
 
@@ -128,6 +142,14 @@ Version: 10.25.0.8130
 
 was found.
 
+The Microsoft Update Catalog package was listed for:
+
+```text
+Intel(R) Corporation - System - 10.25.0.8130
+Intel(R) Smart Sound Technology (Intel(R) SST) OED
+Architecture: AMD64
+```
+
 Before installing it, the package was extracted and its INF files were inspected.
 
 The package contained:
@@ -137,6 +159,12 @@ IntcOED.inf
 DriverVer = 10/17/2022,10.25.00.8130
 ```
 
+### Evidence — INF validation
+
+![Intel SST OED INF validation for DSP_CTLR_DEV_06C8](docs/images/03-intel-sst-oed-inf-validation.png)
+
+*The extracted Intel SST package explicitly contains support for `DSP_CTLR_DEV_06C8`.*
+
 Most importantly, the INF explicitly supported:
 
 ```text
@@ -145,11 +173,15 @@ INTELAUDIO\DIF_0009&UIF_0000&DSP_CTLR_DEV_06C8&VEN_8086&DEV_0222
 
 which matched the Compatible ID reported by the affected device.
 
+This match was the key validation before attempting the installation.
+
 ---
 
 ## Extracting and validating the driver
 
-After downloading the CAB from the Microsoft Update Catalog, create a temporary directory and extract it:
+After downloading the CAB from the [Microsoft Update Catalog](https://www.catalog.update.microsoft.com/), create a temporary directory and extract it.
+
+Open **PowerShell as Administrator**:
 
 ```powershell
 $dest = "C:\Temp\IntelSST8130"
@@ -172,13 +204,15 @@ ForEach-Object {
 }
 ```
 
-Always verify that the driver package supports your own Hardware ID or Compatible ID before installing it.
+Do not proceed only because the driver version is the same as the one documented here.
+
+Always verify that the package supports your own **Hardware ID or Compatible ID**.
 
 ---
 
 ## Installing the driver
 
-Open **PowerShell as Administrator** and run:
+Once compatibility has been verified, open **PowerShell as Administrator** and run:
 
 ```powershell
 pnputil /add-driver "C:\Temp\IntelSST8130\*.inf" /subdirs /install
@@ -224,7 +258,38 @@ Intel(R) Smart Sound Technology Audio Controller
 Status: OK
 ```
 
+### Evidence — Successful installation
+
+![Intel Smart Sound Technology OED successfully installed](docs/images/04-intel-sst-oed-fixed.png)
+
+*Final verification: both the Intel Smart Sound controller and Intel Smart Sound Technology OED are reported as OK.*
+
 After rebooting Windows, the audio devices were correctly detected and **audio functionality was restored**.
+
+---
+
+## Root cause
+
+The issue was not simply a missing Realtek audio driver.
+
+The Intel Smart Sound controller itself was already detected and operational. The failure occurred at the DSP child device:
+
+```text
+Intel High Definition DSP
+```
+
+Windows detected the hardware but could not associate an appropriate OED driver with it, resulting in:
+
+```text
+CM_PROB_FAILED_INSTALL
+Code 28
+```
+
+Installing an Intel SST OED package whose INF explicitly matched the DSP Compatible ID allowed Windows to correctly enumerate the device as:
+
+```text
+Intel(R) Smart Sound Technology OED
+```
 
 ---
 
@@ -245,12 +310,20 @@ Check your Hardware ID first.
 
 Driver compatibility can vary depending on the hardware revision, Windows version and OEM configuration.
 
-Whenever possible:
+Creating a restore point or backup before manually changing system drivers is recommended.
 
-- Download drivers from the laptop manufacturer or Microsoft Update Catalog.
-- Verify Hardware IDs before manually installing drivers.
-- Create a restore point or backup before changing system drivers.
-- Avoid downloading driver packages from unknown third-party websites.
+---
+
+## Driver sources
+
+Whenever possible, obtain drivers from official sources:
+
+- [Lenovo Support](https://pcsupport.lenovo.com/)
+- [Microsoft Update Catalog](https://www.catalog.update.microsoft.com/)
+
+Avoid repackaged driver downloads from unknown third-party websites.
+
+This repository does **not** redistribute the Intel driver package. It only documents the troubleshooting and installation procedure.
 
 ---
 
@@ -272,12 +345,13 @@ This repository documents a troubleshooting procedure that worked on one specifi
 
 Use it as a diagnostic reference and verify compatibility with your own hardware before installing or modifying drivers.
 
+Neither Lenovo, Intel nor Microsoft is affiliated with this repository.
+
 ---
 
 ## Author
 
-**William Barreto**
-
+**William Barreto**  
 Software Engineer
 
 If this guide helped you solve the same issue, consider giving the repository a ⭐ so other users can find it more easily.
